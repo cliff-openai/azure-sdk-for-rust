@@ -328,8 +328,13 @@ impl BlobClient {
 
     /// Full URL for the blob.
     pub fn url(&self) -> azure_core::Result<Url> {
+        let blob_name = self.blob_name();
+        assert!(
+            !blob_name.starts_with('/') && !blob_name.ends_with('/'),
+            "blob names must not start or end with '/': {blob_name}"
+        );
         let mut url = self.container_client().url()?;
-        let parts = self.blob_name().trim_matches('/').split('/');
+        let parts = blob_name.trim_matches('/').split('/');
         url.path_segments_mut()
             .map_err(|()| Error::message(ErrorKind::DataConversion, "Invalid url"))?
             .extend(parts);
@@ -443,16 +448,27 @@ mod tests {
             "http://127.0.0.1:10000/devstoreaccount1/a/b/c/d?fake_token"
         );
 
-        let url = build_url("a", "/b/c/d", &sas);
-        assert_eq!(
-            url.as_str(),
-            "http://127.0.0.1:10000/devstoreaccount1/a/b/c/d?fake_token"
-        );
-
         let url = build_url("a", "b/c/d/hi there", &sas);
         assert_eq!(
             url.as_str(),
             "http://127.0.0.1:10000/devstoreaccount1/a/b/c/d/hi%20there?fake_token"
         );
+    }
+
+    #[test]
+    fn test_generate_url_rejects_leading_or_trailing_slashes() {
+        let sas = FakeSas {
+            token: "fake_token".to_owned(),
+        };
+
+        let leading = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            build_url("a", "/b/c/d", &sas);
+        }));
+        assert!(leading.is_err(), "expected panic for leading slash");
+
+        let trailing = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            build_url("a", "b/c/d/", &sas);
+        }));
+        assert!(trailing.is_err(), "expected panic for trailing slash");
     }
 }
